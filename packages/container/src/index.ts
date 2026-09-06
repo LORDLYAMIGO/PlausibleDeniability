@@ -1,12 +1,14 @@
 import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
+import { basename } from 'node:path';
 import { decrypt, deriveKeys, deriveMasterKey, encrypt, keyedBytes, type KdfParams, DEFAULT_KDF, SALT_SIZE, NONCE_SIZE, TAG_SIZE } from '../../crypto/src/index.js';
 import { slotFor } from '../../placement/src/index.js';
 
 const MAGIC = Buffer.from('PDENY001', 'ascii');
 const HEADER_SIZE = 88;
 const MAX_SLOTS = 10_000_000;
-const CHUNK_METADATA_SIZE = 32;
+const CHUNK_METADATA_SIZE = 256;
+const MAX_FILENAME_BYTES = CHUNK_METADATA_SIZE - 34;
 
 export interface Header {
   version: number;
@@ -21,6 +23,7 @@ export interface Header {
 export interface RecoveredPayload {
   data: Buffer;
   payloadId: string;
+  filename: string;
 }
 
 export function encodeHeader(header: Header): Buffer {
@@ -66,17 +69,21 @@ export async function createContainer(path: string, size: number, slotSize: numb
   return header;
 }
 
-function metadata(payloadId: Buffer, chunkIndex: number, totalChunks: number, length: number): Buffer {
+function metadata(payloadId: Buffer, chunkIndex: number, totalChunks: number, length: number, filename: string): Buffer {
   const result = Buffer.alloc(CHUNK_METADATA_SIZE);
+  const filenameBytes = Buffer.from(basename(filename), 'utf8');
+  if (filenameBytes.length > MAX_FILENAME_BYTES) throw new Error('Filename is too long.');
   payloadId.copy(result, 0);
   result.writeUInt32BE(chunkIndex, 16);
   result.writeUInt32BE(totalChunks, 20);
   result.writeUInt32BE(length, 24);
   result.writeUInt32BE(0x5044, 28);
+  result.writeUInt16BE(filenameBytes.length, 32);
+  filenameBytes.copy(result, 34);
   return result;
 }
 
-export async function addPayload(path: string, password: string, data: Buffer): Promise<void> {
+export async function addPayload(path: string, password: string, data: Buffer, filename = 'recovered-file'): Promise<void> {
   const file = await fs.readFile(path);
   const header = decodeHeader(file);
   const capacity = payloadCapacity(header);
@@ -91,7 +98,7 @@ export async function addPayload(path: string, password: string, data: Buffer): 
   for (let index = 0; index < totalChunks; index += 1) {
     const start = index * capacity;
     const length = Math.min(capacity, Math.max(0, data.length - start));
-    const plaintext = Buffer.concat([metadata(payloadId, index, totalChunks, length), data.subarray(start, start + length), randomBytes(capacity - length)]);
+    const plaintext = Buffer.concat([metadata(payloadId, index, totalChunks, length, filename), data.subarray(start, start + length), randomBytes(capacity - length)]);
     const encoded = encrypt(keys.encryption, plaintext);
     const slot = Buffer.concat([encoded, randomBytes(header.slotSize - encoded.length)]);
     let probe = 0;
@@ -112,6 +119,7 @@ export async function extractPayload(path: string, password: string): Promise<Re
   const payloadId = keyedBytes(keys.encryption, 'payload-id/v1', 16);
   const chunks = new Map<number, Buffer>();
   let totalChunks: number | undefined;
+  let filename: string | undefined;
   for (let index = 0; index < header.slotCount; index += 1) {
     const slot = file.subarray(HEADER_SIZE + index * header.slotSize, HEADER_SIZE + (index + 1) * header.slotSize);
     const plaintext = decrypt(keys.encryption, slot.subarray(0, slot.length - (header.slotSize - (NONCE_SIZE + TAG_SIZE + CHUNK_METADATA_SIZE + payloadCapacity(header)))), undefined);
@@ -119,13 +127,17 @@ export async function extractPayload(path: string, password: string): Promise<Re
     const chunkIndex = plaintext.readUInt32BE(16);
     const chunkTotal = plaintext.readUInt32BE(20);
     const length = plaintext.readUInt32BE(24);
-    if (plaintext.readUInt32BE(28) !== 0x5044 || chunkTotal < 1 || chunkTotal > header.slotCount || chunkIndex >= chunkTotal || length > payloadCapacity(header) || chunks.has(chunkIndex)) throw new Error('Unable to recover payload.');
+    const filenameLength = plaintext.readUInt16BE(32);
+    if (plaintext.readUInt32BE(28) !== 0x5044 || filenameLength > MAX_FILENAME_BYTES || chunkTotal < 1 || chunkTotal > header.slotCount || chunkIndex >= chunkTotal || length > payloadCapacity(header) || chunks.has(chunkIndex)) throw new Error('Unable to recover payload.');
     totalChunks = totalChunks ?? chunkTotal;
     if (totalChunks !== chunkTotal) throw new Error('Unable to recover payload.');
+    const chunkFilename = plaintext.subarray(34, 34 + filenameLength).toString('utf8');
+    filename = filename ?? chunkFilename;
+    if (filename !== chunkFilename || !filename || basename(filename) !== filename) throw new Error('Unable to recover payload.');
     chunks.set(chunkIndex, Buffer.from(plaintext.subarray(CHUNK_METADATA_SIZE, CHUNK_METADATA_SIZE + length)));
   }
   if (totalChunks === undefined || chunks.size !== totalChunks) throw new Error('Unable to recover payload.');
-  return { data: Buffer.concat(Array.from({ length: totalChunks }, (_, index) => chunks.get(index)!)), payloadId: payloadId.toString('hex') };
+  return { data: Buffer.concat(Array.from({ length: totalChunks }, (_, index) => chunks.get(index)!)), payloadId: payloadId.toString('hex'), filename: filename! };
 }
 
 export async function inspectContainer(path: string): Promise<Omit<Header, 'salt' | 'id'>> {

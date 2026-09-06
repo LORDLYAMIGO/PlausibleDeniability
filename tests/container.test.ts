@@ -8,10 +8,12 @@ test('round trips independent payloads', async () => {
   const path = join(tmpdir(), `pd-${Date.now()}.pd`);
   try {
     await createContainer(path, 128 * 1024, 4096);
-    await addPayload(path, 'alpha', Buffer.from('first payload'));
-    await addPayload(path, 'beta', Buffer.from('second payload'));
+    await addPayload(path, 'alpha', Buffer.from('first payload'), 'harmless.pdf');
+    await addPayload(path, 'beta', Buffer.from('second payload'), 'secret.zip');
     expect((await extractPayload(path, 'alpha')).data.toString()).toBe('first payload');
+    expect((await extractPayload(path, 'alpha')).filename).toBe('harmless.pdf');
     expect((await extractPayload(path, 'beta')).data.toString()).toBe('second payload');
+    expect((await extractPayload(path, 'beta')).filename).toBe('secret.zip');
     await expect(extractPayload(path, 'wrong')).rejects.toThrow('Unable to recover payload.');
     expect((await inspectContainer(path)).slotCount).toBeGreaterThan(1);
   } finally { await fs.rm(path, { force: true }); }

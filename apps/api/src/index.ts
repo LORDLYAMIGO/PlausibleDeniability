@@ -69,16 +69,16 @@ const server = createServer(async (request, response) => {
       return send(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/api/container/encrypt') {
-      const main = input.main as { data: string };
-      const decoy = input.decoy as { data: string };
+      const main = input.main as { name: string; data: string };
+      const decoy = input.decoy as { name: string; data: string };
       const mainPassword = String(input.mainPassword);
       const decoyPassword = String(input.decoyPassword);
       const containerSize = Number(input.containerSize);
       const slotSize = Number(input.slotSize);
       const encoded = await withTemporaryFiles(async (containerPath, mainPath, decoyPath) => {
         await createContainer(containerPath, containerSize, slotSize);
-        await addPayload(containerPath, mainPassword, Buffer.from(main.data, 'base64'));
-        await addPayload(containerPath, decoyPassword, Buffer.from(decoy.data, 'base64'));
+        await addPayload(containerPath, mainPassword, Buffer.from(main.data, 'base64'), main.name);
+        await addPayload(containerPath, decoyPassword, Buffer.from(decoy.data, 'base64'), decoy.name);
         return (await fs.readFile(containerPath)).toString('base64');
       }, Buffer.from(main.data, 'base64'), Buffer.from(decoy.data, 'base64'));
       return send(response, 200, { container: encoded });
@@ -88,7 +88,7 @@ const server = createServer(async (request, response) => {
       try {
         await fs.writeFile(containerPath, Buffer.from(String(input.container), 'base64'));
         const result = await extractPayload(containerPath, String(input.password));
-        return send(response, 200, { data: result.data.toString('base64') });
+        return send(response, 200, { data: result.data.toString('base64'), filename: result.filename });
       } finally {
         await fs.rm(containerPath, { force: true });
       }

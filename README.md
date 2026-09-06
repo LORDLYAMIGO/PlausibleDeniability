@@ -20,7 +20,7 @@ Use `PD_PASSWORD` or `--password-env`; passwords are never command-line argument
 
 ## Design
 
-Argon2id derives a master key from the password and public container salt. HKDF separates placement and encryption keys. ChaCha20-Poly1305 authenticates every chunk. Chunk metadata is encrypted, and physical slots have equal size.
+Argon2id derives a master key from the password and public container salt. HKDF separates placement and encryption keys. ChaCha20-Poly1305 authenticates every chunk. Chunk metadata, including the original filename and extension, is encrypted, and physical slots have equal size.
 
 The current allocator is deterministic per password and resolves collisions within one add operation. Because a writer cannot identify another password's occupied random-looking slots, cross-password collision avoidance cannot be guaranteed without a discoverable allocation structure. The implementation documents this limitation rather than claiming stronger deniability. Use generous capacity and treat mutation/version comparison as observable.
 

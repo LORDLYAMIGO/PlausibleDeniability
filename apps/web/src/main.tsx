@@ -57,9 +57,9 @@ function App() {
     setStatus('Recovering locally...');
     try {
       const response = await fetch(`${API}/api/container/recover`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ container, password: recoverPassword }) });
-      const result = await response.json() as { data?: string; error?: string };
+      const result = await response.json() as { data?: string; filename?: string; error?: string };
       if (!response.ok || !result.data) throw new Error('Unable to recover payload.');
-      download(result.data, recoveredName || 'recovered-file', 'application/octet-stream');
+      download(result.data, result.filename || recoveredName || 'recovered-file', 'application/octet-stream');
       setStatus('Payload recovered.');
     } catch (error) { setStatus(error instanceof Error ? error.message : 'Unable to recover payload.'); }
   }
