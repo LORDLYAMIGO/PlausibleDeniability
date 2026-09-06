@@ -1,0 +1,23 @@
+{
+  "name": "plausible-deniability",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "cli": "tsx apps/cli/src/index.ts",
+    "api": "tsx apps/api/src/index.ts",
+    "dev": "npm --prefix apps/web run dev",
+    "dev:api": "tsx apps/api/src/index.ts"
+  },
+  "dependencies": {
+    "argon2": "^0.31.2",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,1 @@
+{"name":"@pd/web","private":true,"scripts":{"dev":"vite","build":"vite build"},"dependencies":{"@vitejs/plugin-react":"latest","plausible-deniability":"file:../..","react":"latest","react-dom":"latest","vite":"latest"}}
